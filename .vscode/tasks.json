@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "C/C++: g++.exe build active file",
+            "command": "g++.exe",
+            "args": [
+                "-std=c++17",
+                "-g",
+                "C:\\Users\\be_ka\\OneDrive\\Documents\\GitHub\\TLS_server_communication\\TLS_EXASOL_KARTHI.cpp",
+                "-o",
+                "C:\\Users\\be_ka\\OneDrive\\Documents\\GitHub\\TLS_server_communication\\TLS_EXASOL_KARTHI.exe",
+                "-I",
+                "C:\\Program Files\\OpenSSL-Win64\\include",
+                "-L",
+                "C:\\Program Files\\OpenSSL-Win64\\lib",
+                "-lssl",
+                "-lcrypto"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
