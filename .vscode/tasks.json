@@ -12,7 +12,7 @@
                 "-o",
                 "C:\\Users\\be_ka\\OneDrive\\Documents\\GitHub\\TLS_server_communication\\TLS_EXASOL_KARTHI.exe",
                 "-I",
-                "C:\\Program Files\\OpenSSL-Win64\\include",
+                "C:\\Program Files\\OpenSSL-Win64\\include","C:\\msys64\\ucrt64\\include",
                 "-L",
                 "C:\\Program Files\\OpenSSL-Win64\\lib",
                 "-lssl",

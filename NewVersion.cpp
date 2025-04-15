@@ -503,7 +503,7 @@
      TLSClient(const std::string& hostname, 
               const std::string& cert_file, 
               const std::string& key_file, 
-              int port = 443,
+              int port = 3336,
               int num_workers = std::thread::hardware_concurrency())
          : m_hostname(hostname),
            m_cert_file(cert_file),
@@ -524,7 +524,7 @@
          }
          
          // Create and start workers
-         for (int i = 0; i < m_num_workers; i++) {
+         for (int i = 0; i < (m_num_workers); i++) {
              std::unique_ptr<TLSWorker> worker = std::make_unique<TLSWorker>(
                  m_hostname, m_cert_file, m_key_file, m_port, m_task_queue, m_result_queue);
              
@@ -607,7 +607,7 @@
      std::string hostname = "18.202.148.130";           
      std::string cert_file = "";
      std::string key_file = "";
-     int port = 443;
+     int port = 3336;
      int num_workers = std::thread::hardware_concurrency();
      
      for (int i = 1; i < argc; i++) {
