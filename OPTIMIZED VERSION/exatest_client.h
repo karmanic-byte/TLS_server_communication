@@ -1,163 +1,202 @@
-#ifndef EXATEST_CLIENT_H
-#define EXATEST_CLIENT_H
-
+#include <iostream>
 #include <string>
 #include <vector>
-#include <map>
-#include <sstream>
 #include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <random>
 #include <algorithm>
+#include <functional>
+#include <memory>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#endif
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/bio.h>
+
 #include "utils.h"
 #include "logger.h"
 #include "config.h"
 #include "pow_solver.h"
 #include "tls_connection.h"
 
-// Enhanced Client class for the Exatest protocol with improved user input handling
-class ExatestClient {
-public:
-    struct UserInfo {
-        std::string name;
-        std::vector<std::string> emails;
-        std::string skype;
-        std::string birthdate;
-        std::string country;
-        std::vector<std::string> addressLines;
+#ifdef USE_OPENCL
+#include "opencl_utils.h"
+#endif
+
+// User information struct
+struct UserInfo {
+    std::string name;
+    std::vector<std::string> emails;
+    std::string skype;
+    std::string birthdate;
+    std::string country;
+    std::vector<std::string> addressLines;
+    
+    // Constructor with default values
+    UserInfo() {
+        name = "Default User";
+        emails = {"default@example.com"};
+        skype = "default.skype";
+        birthdate = "01.01.1990";  // Format: DD.MM.YYYY
+        country = "United States";
+        addressLines = {"123 Default St", "Default City, 12345"};
+    }
+    
+    // Validate user information
+    bool validate(std::vector<std::string>& errors) const {
+        bool valid = true;
+        CountryList countryList;
         
-        // Constructor with default values
-        UserInfo() {
-            // Default values can be overridden by user input
-            name = "Default User";
-            emails = {"default@example.com"};
-            skype = "default.skype";
-            birthdate = "01.01.1990";  // Format: DD.MM.YYYY
-            country = "United States";
-            addressLines = {"123 Default St", "Default City, 12345"};
+        // Validate name
+        if (name.empty()) {
+            errors.push_back("Name cannot be empty");
+            valid = false;
         }
         
-        // Validate user information
-        bool validate(std::vector<std::string>& errors) const {
-            bool valid = true;
-            CountryList countryList;
-            
-            // Validate name
-            if (name.empty()) {
-                errors.push_back("Name cannot be empty");
-                valid = false;
-            }
-            
-            // Validate emails
-            if (emails.empty()) {
-                errors.push_back("At least one email address is required");
-                valid = false;
-            } else {
-                for (const auto& email : emails) {
-                    if (email.find('@') == std::string::npos) {
-                        errors.push_back("Invalid email address: " + email);
-                        valid = false;
-                        break;
-                    }
+        // Validate emails
+        if (emails.empty()) {
+            errors.push_back("At least one email address is required");
+            valid = false;
+        } else {
+            for (const auto& email : emails) {
+                if (email.find('@') == std::string::npos) {
+                    errors.push_back("Invalid email address: " + email);
+                    valid = false;
+                    break;
                 }
             }
-            
-            // Validate birthdate (simple format check)
-            if (birthdate.length() != 10 || 
-                birthdate[2] != '.' || 
-                birthdate[5] != '.') {
-                errors.push_back("Birthdate must be in DD.MM.YYYY format");
-                valid = false;
-            }
-            
-            // Validate country
-            if (!countryList.isValid(country)) {
-                errors.push_back("Invalid country name: " + country);
-                valid = false;
-            }
-            
-            // Validate address
-            if (addressLines.empty()) {
-                errors.push_back("At least one address line is required");
-                valid = false;
-            }
-            
-            return valid;
         }
         
-        // Helper method to collect user info interactively
-        static UserInfo collectFromUser() {
-            UserInfo info;
-            CountryList countryList;
-            
-            std::cout << "\n" << Color::BOLD << "Please enter your information:" << Color::RESET << "\n";
-            
-            std::cout << "Full name: ";
-            std::getline(std::cin, info.name);
-            
-            // Email addresses
-            int emailCount = 0;
-            std::cout << "How many email addresses do you want to provide? ";
-            std::cin >> emailCount;
-            std::cin.ignore(); // Clear the newline
-            
-            info.emails.clear();
-            for (int i = 0; i < emailCount; i++) {
-                std::string email;
-                std::cout << "Email " << (i+1) << ": ";
-                std::getline(std::cin, email);
-                info.emails.push_back(email);
-            }
-            
-            std::cout << "Skype ID: ";
-            std::getline(std::cin, info.skype);
-            
+        // Validate birthdate (simple format check)
+        if (birthdate.length() != 10 || 
+            birthdate[2] != '.' || 
+            birthdate[5] != '.') {
+            errors.push_back("Birthdate must be in DD.MM.YYYY format");
+            valid = false;
+        }
+        
+        // Validate country
+        if (!countryList.isValid(country)) {
+            errors.push_back("Invalid country name: " + country);
+            valid = false;
+        }
+        
+        // Validate address
+        if (addressLines.empty()) {
+            errors.push_back("At least one address line is required");
+            valid = false;
+        }
+        
+        return valid;
+    }
+    
+    // Helper method to collect user info interactively
+    static UserInfo collectFromUser() {
+        UserInfo info;
+        CountryList countryList;
+        
+        std::cout << "\n" << Color::BOLD << "Please enter your information:" << Color::RESET << "\n";
+        
+        std::cout << "Full name: ";
+        std::getline(std::cin, info.name);
+        
+        // Email addresses
+        int emailCount = 0;
+        std::cout << "How many email addresses do you want to provide? ";
+        std::cin >> emailCount;
+        std::cin.ignore(); // Clear the newline
+        
+        info.emails.clear();
+        for (int i = 0; i < emailCount; i++) {
+            std::string email;
+            std::cout << "Email " << (i+1) << ": ";
+            std::getline(std::cin, email);
+            info.emails.push_back(email);
+        }
+        
+        std::cout << "Skype ID (or N/A if none): ";
+        std::getline(std::cin, info.skype);
+        
+        // Validate and correct birthdate format
+        bool validBirthdate = false;
+        while (!validBirthdate) {
             std::cout << "Birthdate (DD.MM.YYYY): ";
             std::getline(std::cin, info.birthdate);
             
-            // Country selection
-            bool validCountry = false;
-            while (!validCountry) {
-                std::cout << "Country: ";
-                std::getline(std::cin, info.country);
-                
-                validCountry = countryList.isValid(info.country);
-                if (!validCountry) {
-                    std::cout << Color::RED << "Invalid country name. Please try again." << Color::RESET << "\n";
-                }
+            if (info.birthdate.length() == 10 && 
+                info.birthdate[2] == '.' && 
+                info.birthdate[5] == '.') {
+                validBirthdate = true;
+            } else {
+                std::cout << Color::RED << "Invalid birthdate format. Please use DD.MM.YYYY format." 
+                          << Color::RESET << "\n";
             }
-            
-            // Address lines
-            int addressLineCount = 0;
-            std::cout << "How many address lines do you want to provide? ";
-            std::cin >> addressLineCount;
-            std::cin.ignore(); // Clear the newline
-            
-            info.addressLines.clear();
-            for (int i = 0; i < addressLineCount; i++) {
-                std::string addressLine;
-                std::cout << "Address line " << (i+1) << ": ";
-                std::getline(std::cin, addressLine);
-                info.addressLines.push_back(addressLine);
-            }
-            
-            // Validate and report any issues
-            std::vector<std::string> errors;
-            if (!info.validate(errors)) {
-                std::cout << Color::RED << "There are validation issues with your information:" << Color::RESET << "\n";
-                for (const auto& error : errors) {
-                    std::cout << "- " << error << "\n";
-                }
-                std::cout << "Please correct these issues and try again.\n";
-                return collectFromUser(); // Recursively collect again
-            }
-            
-            return info;
         }
-    };
-    
+        
+        // Country selection with validation
+        bool validCountry = false;
+        while (!validCountry) {
+            std::cout << "Country (from https://www.countries-ofthe-world.com/all-countries.html): ";
+            std::getline(std::cin, info.country);
+            
+            validCountry = countryList.isValid(info.country);
+            if (!validCountry) {
+                std::cout << Color::RED << "Invalid country name. Please use a country name from the list." 
+                          << Color::RESET << "\n";
+            }
+        }
+        
+        // Address lines
+        int addressLineCount = 0;
+        std::cout << "How many address lines do you want to provide? ";
+        std::cin >> addressLineCount;
+        std::cin.ignore(); // Clear the newline
+        
+        info.addressLines.clear();
+        for (int i = 0; i < addressLineCount; i++) {
+            std::string addressLine;
+            std::cout << "Address line " << (i+1) << ": ";
+            std::getline(std::cin, addressLine);
+            info.addressLines.push_back(addressLine);
+        }
+        
+        // Validate and report any issues
+        std::vector<std::string> errors;
+        if (!info.validate(errors)) {
+            std::cout << Color::RED << "There are validation issues with your information:" << Color::RESET << "\n";
+            for (const auto& error : errors) {
+                std::cout << "- " << error << "\n";
+            }
+            std::cout << "Please correct these issues and try again.\n";
+            return collectFromUser(); // Recursively collect again
+        }
+        
+        return info;
+    }
+};
+
+// Main client class for the Exatest protocol
+class ExatestClient {
+public:
     ExatestClient(const std::string& hostname, 
-                const std::string& cert,
-                const std::string& key,
-                const UserInfo& userInfo)
+                 const std::string& cert,
+                 const std::string& key,
+                 const UserInfo& userInfo)
         : m_hostname(hostname), 
           m_cert(cert), 
           m_key(key),
@@ -303,7 +342,6 @@ public:
             } else if (command == "POW") {
                 // Parse POW parameters
                 std::istringstream iss(args);
-                authdata = iss.str();
                 std::string challengeStr, difficultyStr;
                 iss >> challengeStr >> difficultyStr;
                 
@@ -312,47 +350,52 @@ public:
                     return false;
                 }
                 
+                authdata = challengeStr; // Save authdata for subsequent commands
                 int difficulty = std::stoi(difficultyStr);
                 
                 logger.info("Received POW challenge - difficulty: " + difficultyStr);
                 logger.info("Challenge: " + challengeStr);
                 
-                // Enhanced POW solving approach
+                // Use our optimized POW solver
                 logger.header("Starting Enhanced POW Solver");
+                
+                // Choose the optimal strategy based on configuration
+                std::string strategy = "auto";
+                if (config.powUseGPU) {
+                    strategy = "gpu";
+                } else if (config.powUseAdaptive) {
+                    strategy = "adaptive";
+                } else if (config.powUseHybrid) {
+                    strategy = "hybrid";
+                } else {
+                    strategy = "cpu";
+                }
+                
+                logger.info("Using strategy: " + strategy);
                 logger.info("Thread count: " + std::to_string(config.powThreadCount));
                 logger.info("Batch size: " + std::to_string(config.powBatchSize));
                 logger.info("Suffix length: " + std::to_string(config.powSuffixLength));
                 
                 auto startTime = std::chrono::high_resolution_clock::now();
                 
-                // First, try with a multi-threaded approach
-                POWThreadPool powSolver(config.powThreadCount, challengeStr, difficulty);
-                std::string solution = powSolver.waitForSolution();
+                // Solve the POW challenge
+                POWSolver::Result result = POWSolver::solve(challengeStr, difficulty, strategy);
                 
                 auto endTime = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+                auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
                 
-                if (solution.empty()) {
+                if (!result.found) {
                     logger.error("Failed to find POW solution");
                     return false;
                 }
                 
-                logger.success("Found POW solution in " + std::to_string(duration.count()) + " seconds");
-                
-                // Verify the solution before sending
-                std::string checkHash = Utils::sha1(challengeStr + solution);
-                std::string expectedPrefix(difficulty, '0');
-                
-                if (checkHash.compare(0, difficulty, expectedPrefix) != 0) {
-                    logger.error("Solution verification failed! Hash: " + checkHash);
-                    return false;
-                }
-                
-                logger.success("Solution verified. Hash: " + checkHash);
+                logger.success("Found POW solution in " + std::to_string(duration) + " seconds");
+                logger.success("Solution: " + result.solution);
+                logger.success("Hash: " + result.hash);
                 
                 // Send the solution
-                logger.command(">>>", solution, "");
-                if (!m_connection.writeLine(solution)) {
+                logger.command(">>>", result.solution, "");
+                if (!m_connection.writeLine(result.solution)) {
                     logger.error("Failed to send POW solution");
                     return false;
                 }
@@ -495,4 +538,224 @@ private:
     int m_lastSuccessfulPort;
 };
 
-#endif // EXATEST_CLIENT_H
+// Main function implementation
+int main(int argc, char* argv[]) {
+    // Initialize network subsystem
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "Failed to initialize Winsock" << std::endl;
+        return 1;
+    }
+#endif
+    
+    // Process command-line arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help") {
+            config.printHelp(argv[0]);
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return 0;
+        }
+    }
+    
+    // Update configuration from command-line arguments
+    config.updateFromArgs(argc, argv);
+    
+    // Print configuration
+    config.printConfig();
+    
+    // Analyze POW settings for optimal performance
+    if (config.analyzePow) {
+        Utils::analyzePermutationSpace(config.powTestDifficulty, config.powSuffixLength);
+    }
+    
+    try {
+        // Get user input mode (interactive or use defaults)
+        bool useInteractiveMode = true;
+        if (config.useDefaultUserInfo) {
+            useInteractiveMode = false;
+        } else {
+            std::string response;
+            std::cout << "Use interactive mode to enter user information? (y/n): ";
+            std::getline(std::cin, response);
+            if (response == "n" || response == "N") {
+                useInteractiveMode = false;
+            }
+        }
+        
+        // Set up user information
+        UserInfo userInfo;
+        
+        if (useInteractiveMode) {
+            // Collect user information interactively
+            userInfo = UserInfo::collectFromUser();
+        } else {
+            // Use default information (replace with your actual information)
+            userInfo.name = "Karthikeyan M";
+            userInfo.emails = {"be_karthi@yahoo.co.in", "karkack@gmail.com"};
+            userInfo.skype = "N/A";
+            userInfo.birthdate = "01.01.1990"; // Format: DD.MM.YYYY
+            userInfo.country = "Germany"; // Use a valid country name
+            userInfo.addressLines = {"Thirumudivakkam Road", "600132 - chennai"};
+            
+            // Display the default information
+            std::cout << "\n" << Color::BOLD << "Using default user information:" << Color::RESET << "\n";
+            std::cout << "Name: " << userInfo.name << "\n";
+            std::cout << "Emails: ";
+            for (size_t i = 0; i < userInfo.emails.size(); ++i) {
+                std::cout << userInfo.emails[i];
+                if (i < userInfo.emails.size() - 1) std::cout << ", ";
+            }
+            std::cout << "\n";
+            std::cout << "Skype: " << userInfo.skype << "\n";
+            std::cout << "Birthdate: " << userInfo.birthdate << "\n";
+            std::cout << "Country: " << userInfo.country << "\n";
+            std::cout << "Address: ";
+            for (const auto& line : userInfo.addressLines) {
+                std::cout << line << ", ";
+            }
+            std::cout << "\n\n";
+        }
+        
+        // Get certificate and key from the environment or command line
+        std::string cert = config.certData;
+        std::string key = config.keyData;
+        
+        // If not provided in config, use defaults from the assignment
+        if (cert.empty() || key.empty()) {
+            // Default certificates from the assignment
+            cert = 
+                "-----BEGIN CERTIFICATE-----\n"
+                "MIIBIzCBywIBATAKBggqhkjOPQQDAjAbMRkwFwYDVQQDDBBleGF0ZXN0LmR5bnU\n"
+                "bmV0MB4XDTI1MDQwNzEwMDQzMloXDTI1MDQyMjEwMDQzMlowIjEgMB4GA1UEAwwX\n"
+                "Y2xpZW50LmV4YXRlc3QuZHludS5uZXQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC\n"
+                "AATRY2PFho4GteOgFLjK6UIWSMjzT3dP29GrW97m3O5ioByqw7WpJstDdNeVIUZQ\n"
+                "OZP3VZN0W3pFmTnQjFGozliEMAoGCCqGSM49BAMCA0cAMEQCIAqmlL3y7mtbx6MS\n"
+                "LgWmr59iLFo+cuAfXUyB7tei5SoeAiALcj5St2c7rUlnaS2TIe+7qhhIVD4wayeO\n"
+                "DjRturJDbg==\n"
+                "-----END CERTIFICATE-----\n"
+                "-----BEGIN CERTIFICATE-----\n"
+                "MIIBJTCBzAIJAIHpTe1vt7jeMAoGCCqGSM49BAMCMBsxGTAXBgNVBAMMEGV4YXRl\n"
+                "c3QuZHludS5uZXQwHhcNMjIwNjE3MTE0MTM2WhcNMjYwNjE2MTE0MTM2WjAbMRkw\n"
+                "FwYDVQQDDBBleGF0ZXN0LmR5bnUubmV0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcD\n"
+                "QgAEd7kDTSuNxx6xcYD1uOi89rjsMuarCIq1PnskB2Oy5QyxL/kYF9Sqc2oIfmSq\n"
+                "SXMh+6sFy11s5aNcMsYoMKzewjAKBggqhkjOPQQDAgNIADBFAiEAktlnw4xaDstX\n"
+                "rmu2MT01AoJqOknfvu/PRysvRj+BZkwCIGiGG312KhvHY7ajJlKet3dnZeNsga6A\n"
+                "LbFlgfAzHy2a\n"
+                "-----END CERTIFICATE-----\n";
+            
+            key = 
+                "-----BEGIN EC PRIVATE KEY-----\n"
+                "MHcCAQEEIO1eB3IU8m/qEpWdMShCR++gZGHTjmz7MWfnEgyrvessoAoGCCqGSM49\n"
+                "AwEHoUQDQgAE0WNjxYaOBrXjoBS4yulCFkjI8093T9vRq1ve5tzuYqAcqsO1qSbL\n"
+                "Q3TXlSFGUDmT91WTdFt6RZk50IxRqM5YhA==\n"
+                "-----END EC PRIVATE KEY-----\n";
+        }
+        
+        // Ask if user wants to load certificates from files instead
+        if (config.promptForCertFiles) {
+            std::string response;
+            std::cout << "Do you want to load certificates from files? (y/n): ";
+            std::getline(std::cin, response);
+            if (response == "y" || response == "Y") {
+                std::string certFile, keyFile;
+                
+                std::cout << "Enter path to certificate file: ";
+                std::getline(std::cin, certFile);
+                
+                std::cout << "Enter path to key file: ";
+                std::getline(std::cin, keyFile);
+                
+                // Load the files
+                try {
+                    std::ifstream certIn(certFile);
+                    if (!certIn.is_open()) {
+                        throw std::runtime_error("Failed to open certificate file: " + certFile);
+                    }
+                    
+                    std::ifstream keyIn(keyFile);
+                    if (!keyIn.is_open()) {
+                        throw std::runtime_error("Failed to open key file: " + keyFile);
+                    }
+                    
+                    // Read the cert file
+                    cert.clear();
+                    std::string line;
+                    while (std::getline(certIn, line)) {
+                        cert += line + "\n";
+                    }
+                    
+                    // Read the key file
+                    key.clear();
+                    while (std::getline(keyIn, line)) {
+                        key += line + "\n";
+                    }
+                    
+                    std::cout << "Certificates loaded successfully.\n";
+                } catch (const std::exception& e) {
+                    std::cout << Color::RED << "Error loading certificates: " << e.what() << Color::RESET << "\n";
+                    std::cout << "Using default certificates instead.\n";
+                }
+            }
+        }
+        
+        // Create the client
+        ExatestClient client(config.serverHostname, cert, key, userInfo);
+        
+        logger.header("Connecting to " + config.serverHostname);
+        
+        // Connect with retry capability
+        if (!client.connect(config.maxRetries, config.retryDelaySeconds)) {
+            logger.error("Failed to establish connection to " + config.serverHostname);
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return 1;
+        }
+        
+        logger.header("Executing Protocol Sequence");
+        
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        if (!client.runProtocol()) {
+            logger.error("Protocol execution failed");
+            client.disconnect();
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return 1;
+        }
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto total_duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time).count();
+        
+        logger.header("Protocol Sequence Completed Successfully");
+        logger.success("All commands processed and END received");
+        logger.success("Total execution time: " + std::to_string(total_duration) + " seconds");
+        
+        client.disconnect();
+        
+    } catch (const std::exception& e) {
+        logger.error("Exception: " + std::string(e.what()));
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return 1;
+    } catch (...) {
+        logger.error("Unknown exception occurred");
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return 1;
+    }
+    
+#ifdef _WIN32
+    // Clean up Winsock
+    WSACleanup();
+#endif
+    
+    return 0;
+}

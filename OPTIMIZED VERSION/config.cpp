@@ -2,7 +2,7 @@
 #include <thread>
 
 // Initialize the global configuration with default values
-ClientConfig config;
+//ClientConfig config;
 
 // Constructor implementation could also be placed here if preferred
 /*
