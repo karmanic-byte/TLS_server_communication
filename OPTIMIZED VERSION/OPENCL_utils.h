@@ -335,13 +335,13 @@ inline std::string getHashKernelSource() {
             uint state = id ^ (seed & 0xFFFFFFFF) ^ ((seed >> 32) & 0xFFFFFFFF);
             
             // Skip a few iterations to increase randomness
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 100; i++) {
                 xorshift(&state);
             }
             
             // Generate a random suffix (8 characters)
-            const int suffixLen = 8;
-            char suffix[9];
+            const int suffixLen = 11;
+            char suffix[12];
             
             for (int i = 0; i < suffixLen; i++) {
                 uint random = xorshift(&state);

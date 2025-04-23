@@ -28,9 +28,9 @@ BINDIR = bin
 
 # Executable name
 ifeq ($(OS),Windows_NT)
-    TARGET = $(BINDIR)/exatest_client.exe
+    TARGET = $(BINDIR)/exatest_client_thread.exe
 else
-    TARGET = $(BINDIR)/exatest_client
+    TARGET = $(BINDIR)/exatest_client_thread
 endif
 
 # Default target

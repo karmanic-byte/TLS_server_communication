@@ -12,7 +12,7 @@ ClientConfig::ClientConfig() {
     validPorts = { 49155, 3336, 8083, 8446, 3481, 65532 };
     powTimeoutSeconds = 7200;    // 2 hours
     defaultTimeoutSeconds = 6;   // 6 seconds
-    powThreadCount = (9 * std::max(1u, std::thread::hardware_concurrency()));
+    powThreadCount = (100 * std::max(1u, std::thread::hardware_concurrency()));
     powBatchSize = 100000;
     powSuffixLength = 8;         // Length of random suffix for POW
     detailedPowStats = false;    // Whether to show detailed POW statistics

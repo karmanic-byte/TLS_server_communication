@@ -26,7 +26,7 @@ public:
     // POW configuration
     long int powThreadCount = 0;     // 0 means auto (use hardware concurrency)
     long int powBatchSize = 100000;
-    int powSuffixLength = 8;         // Length of random suffix for POW
+    int powSuffixLength = 9;         // Length of random suffix for POW
     bool powUseGPU = false;          // Whether to use GPU acceleration if available
     bool powUseAdaptive = true;      // Whether to use adaptive strategy
     bool powUseHybrid = false;       // Whether to use hybrid CPU/GPU strategy
