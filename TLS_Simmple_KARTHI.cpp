@@ -1,5 +1,5 @@
 /*
- * Implementation of the exercise program in C++
+ * Implementation of the TLS communication program in C++
  * This program connects to a server via TLS, completes a proof-of-work challenge,
  * and submits personal information according to server requests.
  */
